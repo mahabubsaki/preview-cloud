@@ -1,0 +1,175 @@
+@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500&family=Inter:wght@400;500;600&family=JetBrains+Mono&display=swap');
+
+:root {
+  /* Brand & Accent */
+  --color-primary: #cc785c;
+  --color-primary-active: #a9583e;
+  
+  /* Surface */
+  --color-canvas: #faf9f5;
+  --color-surface-soft: #f5f0e8;
+  --color-surface-card: #efe9de;
+  --color-surface-dark: #181715;
+  --color-surface-dark-elevated: #252320;
+  
+  /* Text */
+  --color-ink: #141413;
+  --color-body: #3d3d3a;
+  --color-muted: #6c6a64;
+  --color-on-dark: #faf9f5;
+  
+  /* Borders */
+  --color-hairline: #e6dfd8;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--color-canvas);
+  color: var(--color-body);
+  font-family: 'Inter', -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.55;
+}
+
+h1, h2, h3, h4 {
+  font-family: 'EB Garamond', serif;
+  color: var(--color-ink);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+
+header {
+  height: 72px;
+  background: var(--color-canvas);
+  border-bottom: 1px solid var(--color-hairline);
+  display: flex;
+  align-items: center;
+}
+
+.nav-container {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.logo {
+  font-family: 'EB Garamond', serif;
+  font-size: 1.5rem;
+  font-weight: 500;
+  color: var(--color-ink);
+  letter-spacing: -0.03em;
+}
+
+nav ul li a {
+  text-decoration: none;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+nav ul li a:hover {
+  color: var(--color-ink);
+}
+
+main {
+  padding-top: 5rem;
+  padding-bottom: 6rem;
+}
+
+.card {
+  background: var(--color-surface-card);
+  border-radius: 12px;
+  padding: 2rem;
+  border: 1px solid var(--color-hairline);
+}
+
+.card-dark {
+  background: var(--color-surface-dark);
+  color: var(--color-on-dark);
+  border-radius: 12px;
+  padding: 2rem;
+  border: none;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+  font-family: 'Inter', sans-serif;
+}
+
+.btn-primary {
+  background-color: var(--color-primary);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background-color: var(--color-primary-active);
+}
+
+.btn-secondary {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  border: 1px solid var(--color-hairline);
+}
+
+.btn-secondary:hover {
+  background-color: var(--color-surface-soft);
+}
+
+.input {
+  background: var(--color-canvas);
+  border: 1px solid var(--color-hairline);
+  padding: 0.8rem 1rem;
+  border-radius: 8px;
+  color: var(--color-ink);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.95rem;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(204, 120, 92, 0.15);
+}
+
+code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-canvas);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-hairline);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted);
+}

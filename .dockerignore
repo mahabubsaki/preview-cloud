@@ -1,0 +1,8 @@
+temp/
+*.env*
+.env*
+coverage/
+*.tsbuildinfo
+.turbo/
+apps/*/node_modules
+packages/*/node_modules

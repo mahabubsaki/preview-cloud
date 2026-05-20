@@ -1,0 +1,146 @@
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
+    container_name: github-app-dashboard
+    ports:
+      - "3000:3000"
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgres://preview_user:preview_pass_99@postgres:5432/github_app_deployments
+      - REDIS_URL=redis://redis:6379
+      - INTERNAL_SERVER_URL=http://server:3001
+      - NEXT_PUBLIC_SERVER_URL=http://localhost:3001
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - preview-net
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: github-app-db
+    environment:
+      POSTGRES_USER: preview_user
+      POSTGRES_PASSWORD: preview_pass_99
+      POSTGRES_DB: github_app_deployments
+    ports:
+      - "15432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - preview-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U preview_user -d github_app_deployments"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: github-app-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - preview-net
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  traefik:
+    image: traefik:v3.1
+    container_name: github-app-traefik
+    command:
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=Host(`traefik.${PREVIEW_DOMAIN}`)"
+      - "traefik.http.routers.api.service=api@internal"
+      - "traefik.http.routers.api.middlewares=auth"
+      - "traefik.http.middlewares.auth.basicauth.users=admin:$$apr1$$S.896.T.$$vGZ2R0lBTozM4k.FhX2A/0"
+    networks:
+      - preview-net
+
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy
+    container_name: github-app-docker-proxy
+    environment:
+      - CONTAINERS=1 # Allow container management
+      - IMAGES=1     # Allow image management
+      - NETWORKS=1   # Allow network management
+      - POST=1       # Allow write operations (required for run/stop)
+      - BUILD=1      # Allow building images
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - preview-net
+
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    container_name: github-app-server
+    env_file: .env
+    ports:
+      - "3001:3001"
+    environment:
+      - DATABASE_URL=postgres://preview_user:preview_pass_99@postgres:5432/github_app_deployments
+      - REDIS_URL=redis://redis:6379
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - preview-net
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    container_name: github-app-worker
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgres://preview_user:preview_pass_99@postgres:5432/github_app_deployments
+      - REDIS_URL=redis://redis:6379
+      - DEPLOYMENT_MODE=development
+      - INTERNAL_SERVER_URL=http://server:3001
+      - BUILD_CONCURRENCY=2
+      - DELETE_CONCURRENCY=5
+      - PREVIEW_MEMORY_LIMIT=256m
+      - PREVIEW_CPU_LIMIT=0.5
+      - DOCKER_HOST=tcp://docker-proxy:2375 # Connect to the secure proxy instead of the socket
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - PREVIEW_PORT_MIN=${PREVIEW_PORT_MIN}
+      - PREVIEW_PORT_MAX=${PREVIEW_PORT_MAX}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      docker-proxy:
+        condition: service_started
+    networks:
+      - preview-net
+
+networks:
+  preview-net:
+    external: true
+
+volumes:
+  postgres_data:

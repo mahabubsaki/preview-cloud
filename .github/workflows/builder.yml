@@ -1,0 +1,167 @@
+name: Builder
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo_url:
+        description: "URL of the repository to build"
+        required: true
+      commit_sha:
+        description: "Commit SHA to build"
+        required: true
+      image_tag:
+        description: "Tag for the built image"
+        required: true
+      callback_url:
+        description: "URL to notify on completion"
+        required: true
+      callback_url_log:
+        description: "URL to stream logs to"
+        required: true
+      deployment_id:
+        description: "Deployment ID"
+        required: true
+      framework:
+        description: "Detected Framework"
+        required: true
+      build_args:
+        description: "Build arguments (JSON)"
+        required: false
+        default: "{}"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout target repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.inputs.repo_url }}
+          ref: ${{ github.event.inputs.commit_sha }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate Dockerfile
+        run: |
+          if [ ! -f "Dockerfile" ]; then
+            echo "📝 No Dockerfile found, generating a modern Node.js 20 template..."
+            
+            # Detect package manager
+            PKG_MANAGER="npm"
+            if [ -f "yarn.lock" ]; then PKG_MANAGER="yarn"; fi
+            if [ -f "pnpm-lock.yaml" ]; then PKG_MANAGER="pnpm"; fi
+            if [ -f "bun.lockb" ]; then PKG_MANAGER="bun"; fi
+
+            cat <<EOF > Dockerfile
+          FROM node:20-slim AS base
+          WORKDIR /app
+
+          # Install system dependencies for native modules
+          RUN apt-get update && apt-get install -y python3 make g++ curl && rm -rf /var/lib/apt/lists/*
+
+          # Install package manager if needed
+          $( [ "$PKG_MANAGER" = "pnpm" ] && echo "RUN npm install -g pnpm" )
+          $( [ "$PKG_MANAGER" = "bun" ] && echo "RUN npm install -g bun" )
+
+          # Copy manifests
+          COPY package.json $( [ -f "package-lock.json" ] && echo "package-lock.json" ) $( [ -f "yarn.lock" ] && echo "yarn.lock" ) $( [ -f "pnpm-lock.yaml" ] && echo "pnpm-lock.yaml" ) $( [ -f "bun.lockb" ] && echo "bun.lockb" ) ./
+
+          # Install dependencies including optional native ones
+          RUN if [ "$PKG_MANAGER" = "npm" ]; then npm ci --include=optional || npm install --include=optional; \
+              elif [ "$PKG_MANAGER" = "pnpm" ]; then pnpm install --no-frozen-lockfile; \
+              elif [ "$PKG_MANAGER" = "yarn" ]; then yarn install; \
+              elif [ "$PKG_MANAGER" = "bun" ]; then bun install; \
+              fi
+
+          # Inject Build Arguments
+          $(echo '${{ github.event.inputs.build_args }}' | jq -r 'to_entries | .[] | "ARG \(.key)\nENV \(.key)=$\(.key)"')
+
+          # Copy source
+          COPY . .
+
+          # Build
+          RUN npm run build --if-present
+
+          # Runtime stage
+          FROM node:20-slim
+          WORKDIR /app
+          COPY --from=base /app /app
+
+          # Simple static server for frontend frameworks (Vite/Next)
+          RUN npm install -g serve
+
+          EXPOSE 3000
+          $( [ "${{ github.event.inputs.framework }}" = "Vite" ] && echo 'CMD ["serve", "-s", "dist", "-l", "3000"]' || echo 'CMD ["npm", "start"]' )
+          EOF
+            
+            # Remove leading whitespace from generated Dockerfile
+            sed -i 's/^[[:space:]]\{1,\}//' Dockerfile
+            
+            echo "✅ Dockerfile generated successfully."
+          else
+            echo "🚀 Using existing Dockerfile from repository."
+          fi
+
+      - name: Prepare Build Args
+        id: build_args
+        run: |
+          echo "args<<EOF" >> $GITHUB_OUTPUT
+          echo '${{ github.event.inputs.build_args }}' | jq -r 'to_entries | .[] | "\(.key)=\(.value)"' >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Build and Push with Log Streaming
+        run: |
+          # Create the image tag
+          IMAGE_TAG="ghcr.io/${{ github.repository_owner }}/preview-images:${{ github.event.inputs.image_tag }}"
+
+          # Convert build args from JSON to --build-arg format
+          BUILD_ARGS_FLAGS=$(echo '${{ github.event.inputs.build_args }}' | jq -r 'to_entries | .[] | "--build-arg \(.key)=\(.value)"' | tr '\n' ' ')
+
+          echo "🚀 Starting build for $IMAGE_TAG with GHA Cache"
+
+          # Run docker buildx and stream logs to the server
+          # We use --cache-from/to=type=gha to match the performance of the official action
+          (docker buildx build $BUILD_ARGS_FLAGS \
+            --cache-from=type=gha \
+            --cache-to=type=gha,mode=max \
+            -t $IMAGE_TAG . --push 2>&1) | while IFS= read -r line; do
+            echo "$line"
+            # Extract only the content, escape for JSON
+            ESCAPED_LINE=$(echo "$line" | jq -aRs .)
+            curl -s -X POST "${{ github.event.inputs.callback_url_log }}" \
+              -H "Content-Type: application/json" \
+              -H "x-callback-secret: ${{ secrets.ORCHESTRATOR_SECRET }}" \
+              -d "{\"deploymentId\": \"${{ github.event.inputs.deployment_id }}\", \"commitSha\": \"${{ github.event.inputs.commit_sha }}\", \"log\": $ESCAPED_LINE}"
+          done
+
+      - name: Notify Server Success
+        if: success()
+        run: |
+          curl -X POST ${{ github.event.inputs.callback_url }} \
+            -H "Content-Type: application/json" \
+            -H "x-callback-secret: ${{ secrets.ORCHESTRATOR_SECRET }}" \
+            -d '{"deploymentId": "${{ github.event.inputs.deployment_id }}", "status": "success", "image": "ghcr.io/${{ github.repository_owner }}/preview-images:${{ github.event.inputs.image_tag }}", "framework": "${{ github.event.inputs.framework }}"}'
+
+      - name: Notify Server Failure
+        if: failure()
+        run: |
+          curl -X POST ${{ github.event.inputs.callback_url }} \
+            -H "Content-Type: application/json" \
+            -H "x-callback-secret: ${{ secrets.ORCHESTRATOR_SECRET }}" \
+            -d '{"deploymentId": "${{ github.event.inputs.deployment_id }}", "status": "failed", "error": "Build failed in Docker/GitHub Actions"}'

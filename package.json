@@ -1,0 +1,26 @@
+{
+  "name": "github-app-monorepo",
+  "packageManager": "bun@1.3.6",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "proxies": "bun run scripts/proxies.ts",
+    "lint": "turbo run lint",
+    "check-types": "turbo run check-types",
+    "db:clean": "bun run --filter=@github-app/core db:clean",
+    "format": "prettier --write \"**/*.{ts,tsx,md}\""
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.85.1",
+    "@types/bun": "1.3.6",
+    "drizzle-kit": "0.31.10",
+    "prettier": "3.5.3",
+    "turbo": "2.9.6",
+    "typescript": "6.0.3"
+  }
+}
